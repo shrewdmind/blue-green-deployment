@@ -15,6 +15,7 @@ This stage provides that visibility by:
 The result is a self-observing deployment environment — you know which pool is serving traffic, how healthy it is, and when to take action.
 
 ## 🧱 Architecture
+```
                 ┌──────────────────────┐
                 │   Slack Channel      │
                 │  (Blueprint Alerts)  │
@@ -33,6 +34,7 @@ The result is a self-observing deployment environment — you know which pool is
 │ Blue Service │
 │ Green Service│
 └──────────────┘
+```
 
 - Nginx writes structured logs (pool, release, status, latency).
 - Watcher reads those logs in real time, maintains a rolling window, and evaluates conditions.
@@ -46,6 +48,7 @@ Maintenance Mode:	Suppresses alerts during planned toggles.
 Environment-Driven Configuration:	All thresholds and webhook details come from `.env`.
 
 ## 📁 Repository Layout
+```
 .
 ├── docker-compose.yml        # Defines Blue, Green, Nginx, and Watcher services
 ├── nginx/
@@ -58,6 +61,7 @@ Environment-Driven Configuration:	All thresholds and webhook details come from `
 ├── .env.example              # Config variables and defaults
 └── tests/
     └── high_error_rate.sh    # Simple load test to trigger alerts
+```
 
 ## ⚙️ Environment Variables
 
