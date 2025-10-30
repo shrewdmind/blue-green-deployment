@@ -1,14 +1,20 @@
 #!/usr/bin/env sh
 set -e
 
-# Simple entrypoint to generate default upstream/server conf and then run nginx
-# Uses environment variables:
-# - ACTIVE_POOL (blue|green)
-# - BLUE_SERVICE_HOST
-# - GREEN_SERVICE_HOST
-# - APP_PORT
+# --- Stage 3 Fixes: Ensure Log File Exists and has Correct Permissions ---
 
-# Copy main template if provided (so log_format is present)
+# 1. Create the log directory and file inside the shared volume
+mkdir -p /var/log/nginx
+touch /var/log/nginx/access.log
+touch /var/log/nginx/error.log
+
+# 2. Grant universal read access (r) so the 'alert_watcher' container (different user) can read it
+# Nginx typically runs as UID 101, but the watcher runs as root, this ensures cross-container access.
+chmod -R 777 /var/log/nginx || true
+
+# --- Existing Stage 2/3 Logic ---
+
+# Copy main template to the standard Nginx config file path
 if [ -f /etc/nginx/nginx.conf.template ]; then
   cp /etc/nginx/nginx.conf.template /etc/nginx/nginx.conf
 fi
@@ -19,57 +25,36 @@ fi
 : "${GREEN_SERVICE_HOST:=app_green}"
 : "${APP_PORT:=3000}"
 
-# Generate per-stage upstream + server conf
+# Generate per-stage upstream + server conf (Keep your Stage 2 logic here)
 cat > /etc/nginx/conf.d/default.conf <<EOF
 upstream upstream_blue {
-    server ${BLUE_SERVICE_HOST}:${APP_PORT};
+  server ${BLUE_SERVICE_HOST}:${APP_PORT};
 }
 upstream upstream_green {
-    server ${GREEN_SERVICE_HOST}:${APP_PORT};
+  server ${GREEN_SERVICE_HOST}:${APP_PORT};
 }
 
 server {
-    listen 8080;
+  listen 8080;
 
-    # proxy settings
-    location / {
-        # pick upstream based on ACTIVE_POOL env
-        # we use the resolver trick: set $upstream dynamically via map-like if
-        # simple approach: use proxy_pass with variable evaluated at runtime
-        set \$target_upstream "upstream_${ACTIVE_POOL}";
-        proxy_pass http://\$target_upstream;
+  location / {
+    # ... (Your proxy_pass logic remains unchanged) ...
+    set \$target_upstream "upstream_${ACTIVE_POOL}";
+    proxy_pass http://\$target_upstream;
 
-        # preserve app headers that hold pool/release info
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 
-        # set to receive upstream headers through proxy (app must set them)
-        proxy_pass_request_headers on;
-
-        # ensure we get upstream headers exposed to logs
-        # allow upstream to set X-App-Pool and X-Release-Id headers
-        proxy_set_header X-App-Pool \$http_x_app_pool;
-        proxy_set_header X-Release-Id \$http_x_release_id;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-    }
-
-    # health endpoint (optional)
-    location /__health {
-        return 200 "ok";
-    }
+    # Headers from app used for logging
+    proxy_pass_request_headers on;
+    proxy_set_header X-App-Pool \$http_x_app_pool;
+    proxy_set_header X-Release-Id \$http_x_release_id;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+  }
 }
 EOF
-
-# Ensure log ownership to avoid permission problem with mounted volume (best-effort)
-mkdir -p /var/log/nginx
-touch /var/log/nginx/access.log /var/log/nginx/error.log || true
-chown -R nginx:nginx /var/log/nginx || true
-
-# Ensure log ownership to avoid permission problem with mounted volume
-# Grant read access to the file/directory for 'other' users (a quick fix)
-chmod -R o+rX /var/log/nginx || true
 
 # exec nginx
 exec nginx -g 'daemon off;'
