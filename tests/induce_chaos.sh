@@ -1,10 +1,3 @@
-
----
-
-## `tests/induce_chaos.sh`
-A simple script that uses curl to hit an endpoint that we assume Stage2 app supports to flip into error mode. If your Stage2 app exposes specific chaos endpoints, replace the URL/paths accordingly.
-
-```bash
 #!/bin/sh
 #
 # Simple chaos script that repeatedly hits the primary app endpoint to simulate errors.
