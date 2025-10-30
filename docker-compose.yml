@@ -46,18 +46,12 @@ services:
     restart: unless-stopped
 
   alert_watcher:
-    image: python:3.11-slim
+    build: ./watcher
     container_name: alert_watcher
-    depends_on:
-      - nginx
     env_file:
       - .env
     volumes:
       - nginx_logs:/var/log/nginx:ro
-      - ./watcher:/app:ro
-    working_dir: /app
-    # Install requirements then run watcher
-    command: ["bash", "-lc", "pip install -r /app/requirements.txt --no-cache-dir && python /app/watcher.py"]
     restart: unless-stopped
 
 volumes:
