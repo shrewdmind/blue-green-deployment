@@ -50,9 +50,12 @@ services:
     container_name: alert_watcher
     env_file:
       - .env
+    depends_on:
+      - nginx
     volumes:
       - nginx_logs:/var/log/nginx:ro
     restart: unless-stopped
+
 
 volumes:
   nginx_logs:

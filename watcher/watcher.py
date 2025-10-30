@@ -164,7 +164,12 @@ def tail_file(path):
         print(f"[{datetime.utcnow().isoformat()}] Waiting for log file {path}")
         time.sleep(1)
     with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-        fh.seek(0, 2)
+        # Try seeking to end if supported
+        try:
+            fh.seek(0, 2)
+        except (OSError, io.UnsupportedOperation):
+            pass  # Stream is not seekable — continue reading from start
+
         while True:
             line = fh.readline()
             if not line:
