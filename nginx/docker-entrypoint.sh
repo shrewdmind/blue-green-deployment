@@ -67,5 +67,9 @@ mkdir -p /var/log/nginx
 touch /var/log/nginx/access.log /var/log/nginx/error.log || true
 chown -R nginx:nginx /var/log/nginx || true
 
+# Ensure log ownership to avoid permission problem with mounted volume
+# Grant read access to the file/directory for 'other' users (a quick fix)
+chmod -R o+rX /var/log/nginx || true
+
 # exec nginx
 exec nginx -g 'daemon off;'
