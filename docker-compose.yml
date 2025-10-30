@@ -51,7 +51,7 @@ services:
     env_file:
       - .env
     volumes:
-      - nginx_logs:/var/log/nginx:ro
+      - nginx_logs:/var/log/nginx
       - ./watcher:/app:ro
     working_dir: /app
     # Install requirements then run watcher
