@@ -29,8 +29,6 @@ services:
       - app_green
     ports:
       - "${NGINX_PORT}:8080"
-    env_file:
-      - .env
     environment:
       - ACTIVE_POOL=${ACTIVE_POOL}
       - BLUE_SERVICE_HOST=app_blue
@@ -38,25 +36,18 @@ services:
       - APP_PORT=${PORT}
     volumes:
       - ./nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
-      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
-      - nginx_logs:/var/log/nginx
+      - nginx_logs:/var/log/nginx  # ✅ Shared log volume
     entrypoint: ["/docker-entrypoint.sh"]
-    restart: unless-stopped
 
   alert_watcher:
-    image: python:3.11-slim
+    build: ./watcher
     container_name: alert_watcher
-    depends_on:
-      - nginx
     env_file:
       - .env
     volumes:
-      - nginx_logs:/var/log/nginx
-      - ./watcher:/app:ro
-    working_dir: /app
-    # Install requirements then run watcher
-    command: ["bash", "-lc", "pip install -r /app/requirements.txt --no-cache-dir && python /app/watcher.py"]
-    restart: unless-stopped
+      - nginx_logs:/var/log/nginx  # ✅ Same shared volume
+    depends_on:
+      - nginx
 
 volumes:
   nginx_logs:

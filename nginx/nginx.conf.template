@@ -1,23 +1,86 @@
-# nginx.conf.template - main nginx config used by entrypoint
-user  nginx;
-worker_processes  auto;
-error_log  /var/log/nginx/error.log warn;
-pid        /var/run/nginx.pid;
+# ==============================
+# NGINX Configuration Template
+# Stage 3 – Blue/Green Observability + Logging
+# ==============================
 
-events {
-    worker_connections  1024;
-}
-
-http {
-    log_format bluegreen '$remote_addr - $remote_user [$time_local] '
+# -------------------------------------------------------------
+# Custom log format
+# This defines how each log line looks in /var/log/nginx/access.log
+# We include details like:
+# - Which pool handled the request (blue/green)
+# - Release ID
+# - Upstream response status and address
+# - Request time and latency
+# -------------------------------------------------------------
+log_format bluegreen '$remote_addr - $remote_user [$time_local] '
                      '"$request" $status $body_bytes_sent '
                      '"$http_referer" "$http_user_agent" '
-                     'pool=$http_x_app_pool release=$http_x_release_id '
-                     'upstream_status=$upstream_status '
-                     'upstream_addr=$upstream_addr '
-                     'request_time=$request_time upstream_response_time=$upstream_response_time';
+                     'pool="$http_x_app_pool" '
+                     'release="$http_x_release_id" '
+                     'upstream_status="$upstream_status" '
+                     'upstream_addr="$upstream_addr" '
+                     'request_time=$request_time '
+                     'upstream_response_time=$upstream_response_time '
+                     'ua="$http_user_agent"';
 
-    access_log /var/log/nginx/access.log bluegreen;
-    error_log /var/log/nginx/error.log warn;
+# -------------------------------------------------------------
+# Tell Nginx to save access logs to a file (NOT just stdout)
+# The watcher container will tail this file to detect failovers.
+# -------------------------------------------------------------
+access_log /var/log/nginx/access.log bluegreen;
+error_log /var/log/nginx/error.log warn;
 
+# -------------------------------------------------------------
+# Define which upstreams Nginx should route traffic to
+# based on ACTIVE_POOL (decided at container startup)
+# The entrypoint script dynamically fills in these values.
+# -------------------------------------------------------------
+upstream backend_upstream {
+    # PRIMARY (active) pool
+    server ${PRIMARY_HOST}:${APP_PORT} max_fails=1 fail_timeout=2s;
+    # BACKUP pool – used only when primary fails
+    server ${BACKUP_HOST}:${APP_PORT} backup;
+}
+
+# -------------------------------------------------------------
+# HTTP server block: handles all incoming traffic
+# -------------------------------------------------------------
+server {
+    listen 8080;
+    server_name _;
+
+    # Short timeouts so Nginx quickly detects failing upstreams
+    proxy_connect_timeout 1s;
+    proxy_send_timeout 5s;
+    proxy_read_timeout 5s;
+
+    # If the primary (active) app fails, try backup automatically
+    proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+    proxy_next_upstream_tries 2;
+    proxy_next_upstream_timeout 10s;
+
+    # ---------------------------------------------------------
+    # Forward client headers
+    # ---------------------------------------------------------
+    location / {
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # These ensure that app headers come back to the client
+        proxy_pass_header X-App-Pool;
+        proxy_pass_header X-Release-Id;
+
+        # Forward traffic to backend
+        proxy_pass http://backend_upstream;
+    }
+
+    # ---------------------------------------------------------
+    # Optional local endpoint to check Nginx health
+    # You can curl localhost:8080/_nginx_health to verify
+    # ---------------------------------------------------------
+    location = /_nginx_health {
+        return 200 "ok\n";
+    }
 }
