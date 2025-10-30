@@ -8,7 +8,6 @@ http {
     include       mime.types;
     default_type  application/octet-stream;
 
-    # Structured JSON log for observability
     log_format observability escape=json
       '{'
         '"time":"$time_iso8601",'
@@ -19,15 +18,11 @@ http {
         '"upstream_response_time":"$upstream_response_time",'
         '"upstream_status":"$upstream_status",'
         '"upstream_addr":"$upstream_addr",'
-        '"pool":"$http_x_app_pool",'
-        '"release":"$http_x_release_id"'
+        '"upstream_addr_host":"$upstream_addr"'  # duplicate to ensure parsable string
       '}';
 
     access_log /var/log/nginx/access.log observability;
-
     sendfile on;
     keepalive_timeout 65;
-
-    # include default server conf (created by entrypoint)
     include /etc/nginx/conf.d/*.conf;
 }

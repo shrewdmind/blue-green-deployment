@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+HOST=localhost
+PORT=${NGINX_PORT:-8080}
+COUNT=${1:-250}
+
+i=0
+while [ $i -lt $COUNT ]; do
+  curl -s -o /dev/null -w "%{http_code}\n" "http://${HOST}:${PORT}/" || true
+  i=$((i+1))
+done
+echo "Done - sent $COUNT requests to $HOST:$PORT"

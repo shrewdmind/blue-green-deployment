@@ -2,23 +2,19 @@ services:
   app_blue:
     image: "${BLUE_IMAGE}"
     container_name: app_blue
-    environment:
-      - PORT=${PORT}
-      - RELEASE_ID=${RELEASE_ID_BLUE}
-      - X_APP_POOL=blue
+    env_file:
+      - .env
     ports:
-      - "${BLUE_HOST_PORT}:${PORT}"
+      - "${BLUE_HOST_PORT:-8081}:${APP_PORT:-3000}"
     restart: unless-stopped
 
   app_green:
     image: "${GREEN_IMAGE}"
     container_name: app_green
-    environment:
-      - PORT=${PORT}
-      - RELEASE_ID=${RELEASE_ID_GREEN}
-      - X_APP_POOL=green
+    env_file:
+      - .env
     ports:
-      - "${GREEN_HOST_PORT}:${PORT}"
+      - "${GREEN_HOST_PORT:-8082}:${APP_PORT:-3000}"
     restart: unless-stopped
 
   nginx:
@@ -35,11 +31,11 @@ services:
       - ACTIVE_POOL=${ACTIVE_POOL}
       - BLUE_SERVICE_HOST=app_blue
       - GREEN_SERVICE_HOST=app_green
-      - APP_PORT=${PORT:-3000}
+      - APP_PORT=${APP_PORT:-3000}
     volumes:
       - ./nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
       - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
-      - ./logs:/var/log/nginx           # shared log volume
+      - ./logs:/var/log/nginx
     entrypoint: ["/docker-entrypoint.sh"]
     restart: unless-stopped
 
@@ -55,11 +51,11 @@ services:
       - ERROR_RATE_THRESHOLD=${ERROR_RATE_THRESHOLD}
       - WINDOW_SIZE=${WINDOW_SIZE}
       - ALERT_COOLDOWN_SEC=${ALERT_COOLDOWN_SEC}
-      - ACTIVE_POOL=${ACTIVE_POOL}
       - MAINTENANCE_FLAG_PATH=/run/maintenance.flag
+      - ACTIVE_POOL=${ACTIVE_POOL}
     volumes:
       - ./watcher:/app:ro
-      - ./logs:/var/log/nginx
+      - ./logs:/var/log/nginx:ro
       - ./control:/run:rw
     working_dir: /app
     command: ["sh", "-c", "pip install -r requirements.txt --no-cache-dir && python watcher.py /var/log/nginx/access.log"]

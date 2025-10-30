@@ -1,73 +1,59 @@
 #!/bin/sh
 set -eu
 
-# Simple entrypoint for Nginx that:
-# - copies the provided nginx.conf.template to /etc/nginx/nginx.conf
-# - writes a default server conf that proxies to app_blue / app_green based on ACTIVE_POOL env
-# - starts nginx in foreground
-
 TEMPLATE=/etc/nginx/nginx.conf.template
 NGINX_CONF=/etc/nginx/nginx.conf
 DEFAULT_CONF=/etc/nginx/conf.d/default.conf
 
-# Copy template if present
+# Copy template to nginx.conf so it contains the log_format etc.
 if [ -f "$TEMPLATE" ]; then
   cp "$TEMPLATE" "$NGINX_CONF"
 fi
 
-# Resolve upstream hostnames from env or defaults
 BLUE=${BLUE_SERVICE_HOST:-app_blue}
 GREEN=${GREEN_SERVICE_HOST:-app_green}
 APP_PORT=${APP_PORT:-3000}
 ACTIVE_POOL=${ACTIVE_POOL:-blue}
 
+if [ "$ACTIVE_POOL" = "green" ]; then
+  PRIMARY_HOST=$GREEN
+  BACKUP_HOST=$BLUE
+else
+  PRIMARY_HOST=$BLUE
+  BACKUP_HOST=$GREEN
+fi
+
 cat > "$DEFAULT_CONF" <<EOF
-upstream pool_blue {
-    server ${BLUE}:${APP_PORT};
-}
-upstream pool_green {
-    server ${GREEN}:${APP_PORT};
+upstream backend {
+    server ${PRIMARY_HOST}:${APP_PORT};
+    server ${BACKUP_HOST}:${APP_PORT} backup;
 }
 
 server {
     listen 8080;
     server_name localhost;
 
-    # proxy settings
+    # main location: proxy to backend (primary with automatic fallback to backup)
     location / {
-        # Choose upstream based on active pool header -- by default we use ACTIVE_POOL
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 
-        # Let backends set headers to identify pool & release:
-        proxy_set_header X-App-Pool \$upstream_http_x_app_pool;
-        proxy_set_header X-Release-Id \$upstream_http_x_release_id;
-
-        # Health-based proxy pass: main and fallback configured; we will use simple proxy_pass with upstream balancer.
+        # Retry conditions to trigger fallback
         proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
-        
-        # dynamic selection using ACTIVE_POOL environment variable (substituted at container start)
-        # Try primary pool, fallback to backup automatically
-        set $primary_upstream pool_blue;
-        set $backup_upstream pool_green;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
 
-        if ($ACTIVE_POOL = "green") {
-            set $primary_upstream pool_green;
-            set $backup_upstream pool_blue;
-        }
-
-        proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
-        proxy_pass http://$primary_upstream;
-
-        proxy_set_header X-Active-Pool ${ACTIVE_POOL};
+        # preserve upstream headers like X-Release-Id if backend sets it
+        proxy_pass_header X-Release-Id;
     }
 }
 EOF
 
-# Ensure log dir exists
+# ensure log directory exists
 mkdir -p /var/log/nginx
-chown -R nginx:nginx /var/log/nginx || true
+chown -R nginx:nginx /var/log/nginx 2>/dev/null || true
 
-# Exec nginx
 exec nginx -g "daemon off;"
