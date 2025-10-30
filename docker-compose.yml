@@ -52,7 +52,7 @@ services:
       - nginx
     volumes:
       - nginx_logs:/var/log/nginx:ro
-    entrypoint: ["pip", "install", "-r", "requirements.txt", "--no-cache-dir"]
+    entrypoint: ["pip", "install", "-r", "/app/requirements.txt", "--no-cache-dir"] # <--- CHANGED
     command: ["python", "watcher.py"]
     restart: unless-stopped
 
