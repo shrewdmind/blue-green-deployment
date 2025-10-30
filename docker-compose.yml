@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  app_blue:
+    image: "${BLUE_IMAGE}"
+    container_name: app_blue
+    environment:
+      - PORT=${PORT}
+      - RELEASE_ID=${RELEASE_ID_BLUE}
+      - X_APP_POOL=blue
+    ports:
+      - "${BLUE_HOST_PORT}:${PORT}"
+    restart: unless-stopped
+
+  app_green:
+    image: "${GREEN_IMAGE}"
+    container_name: app_green
+    environment:
+      - PORT=${PORT}
+      - RELEASE_ID=${RELEASE_ID_GREEN}
+      - X_APP_POOL=green
+    ports:
+      - "${GREEN_HOST_PORT}:${PORT}"
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx
+    depends_on:
+      - app_blue
+      - app_green
+    ports:
+      - "${NGINX_PORT}:8080"
+    env_file:
+      - .env
+    environment:
+      - ACTIVE_POOL=${ACTIVE_POOL}
+      - BLUE_SERVICE_HOST=app_blue
+      - GREEN_SERVICE_HOST=app_green
+      - APP_PORT=${PORT}
+    volumes:
+      - ./nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+      - nginx_logs:/var/log/nginx
+    entrypoint: ["/docker-entrypoint.sh"]
+    restart: unless-stopped
+
+  alert_watcher:
+    image: python:3.11-slim
+    container_name: alert_watcher
+    depends_on:
+      - nginx
+    env_file:
+      - .env
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+      - ./watcher:/app:ro
+    working_dir: /app
+    # Install requirements then run watcher
+    command: ["bash", "-lc", "pip install -r /app/requirements.txt --no-cache-dir && python /app/watcher.py"]
+    restart: unless-stopped
+
+volumes:
+  nginx_logs:
