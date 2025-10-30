@@ -1,25 +1,25 @@
 services:
   app_blue:
-    image: "${BLUE_IMAGE:-hashicorp/http-echo:latest}"
+    image: "${BLUE_IMAGE}"
     container_name: app_blue
     environment:
-      - PORT=${PORT:-3000}
+      - PORT=${PORT}
+      - RELEASE_ID=${RELEASE_ID_BLUE}
       - X_APP_POOL=blue
-      - X_RELEASE_ID=${RELEASE_ID_BLUE:-blue-unknown}
-    command: ["-text", "blue"]
     ports:
-      - "${BLUE_HOST_PORT:-8081}:3000"
+      - "${BLUE_HOST_PORT}:${PORT}"
+    restart: unless-stopped
 
   app_green:
-    image: "${GREEN_IMAGE:-hashicorp/http-echo:latest}"
+    image: "${GREEN_IMAGE}"
     container_name: app_green
     environment:
-      - PORT=${PORT:-3000}
+      - PORT=${PORT}
+      - RELEASE_ID=${RELEASE_ID_GREEN}
       - X_APP_POOL=green
-      - X_RELEASE_ID=${RELEASE_ID_GREEN:-green-unknown}
-    command: ["-text", "green"]
     ports:
-      - "${GREEN_HOST_PORT:-8082}:3000"
+      - "${GREEN_HOST_PORT}:${PORT}"
+    restart: unless-stopped
 
   nginx:
     image: nginx:stable-alpine
