@@ -48,7 +48,18 @@ server {
         proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
         
         # dynamic selection using ACTIVE_POOL environment variable (substituted at container start)
-        proxy_pass http://pool_${ACTIVE_POOL};
+        # Try primary pool, fallback to backup automatically
+        set $primary_upstream pool_blue;
+        set $backup_upstream pool_green;
+
+        if ($ACTIVE_POOL = "green") {
+            set $primary_upstream pool_green;
+            set $backup_upstream pool_blue;
+        }
+
+        proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
+        proxy_pass http://$primary_upstream;
+
         proxy_set_header X-Active-Pool ${ACTIVE_POOL};
     }
 }
