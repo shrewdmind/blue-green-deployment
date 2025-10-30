@@ -6,6 +6,7 @@ and posts alerts to Slack using SLACK_WEBHOOK_URL from env.
 
 import os
 import time
+import io
 import re
 import json
 import collections
