@@ -38,7 +38,7 @@ services:
       - APP_PORT=${PORT}
     volumes:
       - ./nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
-      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - nginx_logs:/var/log/nginx
     entrypoint: ["/docker-entrypoint.sh"]
     restart: unless-stopped
@@ -46,16 +46,17 @@ services:
   alert_watcher:
     image: python:3.11-slim
     container_name: alert_watcher
-    env_file:
-      - .env
     depends_on:
       - nginx
+    env_file:
+      - .env
     volumes:
       - nginx_logs:/var/log/nginx:ro
-    entrypoint: ["pip", "install", "-r", "/app/requirements.txt", "--no-cache-dir"] # <--- CHANGED
-    command: ["python", "watcher.py"]
+      - ./watcher:/app:ro
+    working_dir: /app
+    # Install requirements then run watcher
+    command: ["bash", "-lc", "pip install -r /app/requirements.txt --no-cache-dir && python /app/watcher.py"]
     restart: unless-stopped
-
 
 volumes:
   nginx_logs:
