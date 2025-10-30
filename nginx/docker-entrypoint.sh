@@ -1,71 +1,62 @@
-#!/usr/bin/env sh
-set -e
+#!/bin/sh
+set -eu
 
-# Simple entrypoint to generate default upstream/server conf and then run nginx
-# Uses environment variables:
-# - ACTIVE_POOL (blue|green)
-# - BLUE_SERVICE_HOST
-# - GREEN_SERVICE_HOST
-# - APP_PORT
+# Simple entrypoint for Nginx that:
+# - copies the provided nginx.conf.template to /etc/nginx/nginx.conf
+# - writes a default server conf that proxies to app_blue / app_green based on ACTIVE_POOL env
+# - starts nginx in foreground
 
-# Copy main template if provided (so log_format is present)
-if [ -f /etc/nginx/nginx.conf.template ]; then
-  cp /etc/nginx/nginx.conf.template /etc/nginx/nginx.conf
+TEMPLATE=/etc/nginx/nginx.conf.template
+NGINX_CONF=/etc/nginx/nginx.conf
+DEFAULT_CONF=/etc/nginx/conf.d/default.conf
+
+# Copy template if present
+if [ -f "$TEMPLATE" ]; then
+  cp "$TEMPLATE" "$NGINX_CONF"
 fi
 
-# Default envs (sensible fallbacks)
-: "${ACTIVE_POOL:=blue}"
-: "${BLUE_SERVICE_HOST:=app_blue}"
-: "${GREEN_SERVICE_HOST:=app_green}"
-: "${APP_PORT:=3000}"
+# Resolve upstream hostnames from env or defaults
+BLUE=${BLUE_SERVICE_HOST:-app_blue}
+GREEN=${GREEN_SERVICE_HOST:-app_green}
+APP_PORT=${APP_PORT:-3000}
+ACTIVE_POOL=${ACTIVE_POOL:-blue}
 
-# Generate per-stage upstream + server conf
-cat > /etc/nginx/conf.d/default.conf <<EOF
-upstream upstream_blue {
-    server ${BLUE_SERVICE_HOST}:${APP_PORT};
+cat > "$DEFAULT_CONF" <<EOF
+upstream pool_blue {
+    server ${BLUE}:${APP_PORT};
 }
-upstream upstream_green {
-    server ${GREEN_SERVICE_HOST}:${APP_PORT};
+upstream pool_green {
+    server ${GREEN}:${APP_PORT};
 }
 
 server {
     listen 8080;
+    server_name localhost;
 
     # proxy settings
     location / {
-        # pick upstream based on ACTIVE_POOL env
-        # we use the resolver trick: set $upstream dynamically via map-like if
-        # simple approach: use proxy_pass with variable evaluated at runtime
-        set \$target_upstream "upstream_${ACTIVE_POOL}";
-        proxy_pass http://\$target_upstream;
-
-        # preserve app headers that hold pool/release info
+        # Choose upstream based on active pool header -- by default we use ACTIVE_POOL
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 
-        # set to receive upstream headers through proxy (app must set them)
-        proxy_pass_request_headers on;
+        # Let backends set headers to identify pool & release:
+        proxy_set_header X-App-Pool \$upstream_http_x_app_pool;
+        proxy_set_header X-Release-Id \$upstream_http_x_release_id;
 
-        # ensure we get upstream headers exposed to logs
-        # allow upstream to set X-App-Pool and X-Release-Id headers
-        proxy_set_header X-App-Pool \$http_x_app_pool;
-        proxy_set_header X-Release-Id \$http_x_release_id;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-    }
-
-    # health endpoint (optional)
-    location /__health {
-        return 200 "ok";
+        # Health-based proxy pass: main and fallback configured; we will use simple proxy_pass with upstream balancer.
+        proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
+        
+        # dynamic selection using ACTIVE_POOL environment variable (substituted at container start)
+        proxy_pass http://pool_${ACTIVE_POOL};
+        proxy_set_header X-Active-Pool ${ACTIVE_POOL};
     }
 }
 EOF
 
-# Ensure log ownership to avoid permission problem with mounted volume (best-effort)
+# Ensure log dir exists
 mkdir -p /var/log/nginx
-touch /var/log/nginx/access.log /var/log/nginx/error.log || true
 chown -R nginx:nginx /var/log/nginx || true
 
-# exec nginx
-exec nginx -g 'daemon off;'
+# Exec nginx
+exec nginx -g "daemon off;"

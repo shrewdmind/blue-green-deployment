@@ -1,25 +1,25 @@
 services:
   app_blue:
-    image: "${BLUE_IMAGE}"
+    image: "${BLUE_IMAGE:-hashicorp/http-echo:latest}"
     container_name: app_blue
     environment:
-      - PORT=${PORT}
-      - RELEASE_ID=${RELEASE_ID_BLUE}
+      - PORT=${PORT:-3000}
       - X_APP_POOL=blue
+      - X_RELEASE_ID=${RELEASE_ID_BLUE:-blue-unknown}
+    command: ["-text", "blue"]
     ports:
-      - "${BLUE_HOST_PORT}:${PORT}"
-    restart: unless-stopped
+      - "${BLUE_HOST_PORT:-8081}:3000"
 
   app_green:
-    image: "${GREEN_IMAGE}"
+    image: "${GREEN_IMAGE:-hashicorp/http-echo:latest}"
     container_name: app_green
     environment:
-      - PORT=${PORT}
-      - RELEASE_ID=${RELEASE_ID_GREEN}
+      - PORT=${PORT:-3000}
       - X_APP_POOL=green
+      - X_RELEASE_ID=${RELEASE_ID_GREEN:-green-unknown}
+    command: ["-text", "green"]
     ports:
-      - "${GREEN_HOST_PORT}:${PORT}"
-    restart: unless-stopped
+      - "${GREEN_HOST_PORT:-8082}:3000"
 
   nginx:
     image: nginx:stable-alpine
@@ -28,18 +28,18 @@ services:
       - app_blue
       - app_green
     ports:
-      - "${NGINX_PORT}:8080"
+      - "${NGINX_PORT:-8080}:8080"
     env_file:
       - .env
     environment:
       - ACTIVE_POOL=${ACTIVE_POOL}
       - BLUE_SERVICE_HOST=app_blue
       - GREEN_SERVICE_HOST=app_green
-      - APP_PORT=${PORT}
+      - APP_PORT=${PORT:-3000}
     volumes:
       - ./nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
       - ./nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
-      - nginx_logs:/var/log/nginx
+      - ./logs:/var/log/nginx           # shared log volume
     entrypoint: ["/docker-entrypoint.sh"]
     restart: unless-stopped
 
@@ -50,12 +50,17 @@ services:
       - nginx
     env_file:
       - .env
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - ERROR_RATE_THRESHOLD=${ERROR_RATE_THRESHOLD}
+      - WINDOW_SIZE=${WINDOW_SIZE}
+      - ALERT_COOLDOWN_SEC=${ALERT_COOLDOWN_SEC}
+      - ACTIVE_POOL=${ACTIVE_POOL}
+      - MAINTENANCE_FLAG_PATH=/run/maintenance.flag
     volumes:
-      - nginx_logs:/var/log/nginx
+      - ./watcher:/app:ro
+      - ./logs:/var/log/nginx
+      - ./control:/run:rw
     working_dir: /app
-    # Install requirements then run watcher
-    command: ["bash", "-lc", "pip install -r /app/requirements.txt --no-cache-dir && python /app/watcher.py"]
+    command: ["sh", "-c", "pip install -r requirements.txt --no-cache-dir && python watcher.py /var/log/nginx/access.log"]
     restart: unless-stopped
-
-volumes:
-  nginx_logs:

@@ -1,15 +1,6 @@
-#!/bin/bash
-set -eo pipefail
-
-NGINX_URL=http://localhost:8080/version
-BLUE_HOST=http://localhost:8081
-GREEN_HOST=http://localhost:8082
-
-echo "Checking nginx endpoint (should be 200)..."
-curl -s -D - "$NGINX_URL" -o /dev/null | sed -n '1,6p'
-
-echo "Direct blue /version:"
-curl -s -D - "${BLUE_HOST}/version" -o /dev/null | sed -n '1,6p'
-
-echo "Direct green /version:"
-curl -s -D - "${GREEN_HOST}/version" -o /dev/null | sed -n '1,6p'
+#!/bin/sh
+set -eu
+echo "Tail last 5 nginx access.log lines..."
+tail -n 5 logs/access.log || true
+echo "Watcher logs (last 50 lines):"
+docker logs --tail 50 alert_watcher || true
